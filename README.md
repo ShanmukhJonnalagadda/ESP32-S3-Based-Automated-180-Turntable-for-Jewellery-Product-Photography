@@ -1,156 +1,172 @@
-# ESP32-S3-Based Automated 180° Turntable for Jewellery Product Photography
+# Automated 180° Jewellery Photography Turntable
 
-An embedded motion-control prototype that rotates a jewellery platform through a controlled sweep to support product photography and video recording. The project combines an ESP32-S3 controller, a geared stepper motor, a ULN2003 driver, and local user controls in a compact platform.
+An Arduino Nano ESP32 (ESP32-S3) motion-control prototype for rotating jewellery during product photography and video recording. The firmware drives a 28BYJ-48 stepper motor through a ULN2003 driver, with adjustable speed and a push-button start/stop control.
 
 **Author:** Shanmukh Jonnalagadda  
-**Focus:** Embedded C/C++, motor control, hardware integration, and prototype development
+**Firmware:** `Jewellery_Project_180_degrees.ino`  
+**Language:** Arduino C/C++
 
 ## Overview
 
-Small jewellery products need consistent positioning to capture their shape, finish, and details from multiple viewpoints. Manually rotating a product can introduce uneven movement and inconsistent framing.
+The turntable alternates between a nominal 180° clockwise sweep and a nominal 180° anticlockwise sweep, pausing for 0.5 seconds after each sweep. This supports filming a product from changing viewpoints while keeping the camera stationary.
 
-This project automates platform rotation using a 28BYJ-48 stepper motor. A potentiometer provides speed adjustment, while a push button provides local control. The 180° sweep is the primary project configuration; 280° and full-revolution configurations were also explored during development.
+The motor starts in the stopped state. Pressing the button starts the sequence; pressing it again stops the motor and releases its coils. A potentiometer adjusts the stepping interval while the program runs.
 
-The prototype automates the turntable motion. Photography and video recording are operated separately; automatic camera triggering is a future enhancement.
+This version automates platform movement. Camera recording is started separately, and this sketch does not implement Bluetooth, Wi-Fi, or automatic camera triggering.
 
-## Features
+## Implemented Features
 
-- ESP32-S3-based control of a 5 V geared stepper motor through a ULN2003 driver.
-- Controlled angular movement for jewellery presentation and capture.
-- Clockwise and counterclockwise motor operation.
-- Potentiometer-based adjustment of rotation speed.
-- Push-button input for local operation.
-- A two-plate mechanical arrangement with the electronics beneath the rotating platform.
+- Eight-state half-step sequence implemented directly with digital outputs.
+- 2048 commanded half-steps per sweep, based on the sketch's 4096-half-step revolution calibration.
+- Automatic reversal after each sweep.
+- 500 ms pause between sweeps, with motor coils released.
+- Push-button start/stop toggle with 50 ms debounce.
+- Analog speed control with a commanded interval of 1000–4000 microseconds per half-step.
+- Timestamp-based stepping using `micros()` and pause/debounce timing using `millis()`.
+- Serial diagnostics for operating state, direction, potentiometer reading, and sweep progress.
+- No external libraries referenced by the sketch; it uses Arduino core functions.
 
-Exact button behavior, direction selection, and sweep sequence depend on the firmware version. A Bluetooth-enabled version was also explored; its controls and dependencies should be documented with that sketch before reuse.
+## Hardware
+
+| Component | Quantity | Function |
+| --- | --- | --- |
+| Arduino Nano ESP32 | 1 | ESP32-S3-based controller |
+| 28BYJ-48, 5 V stepper motor | 1 | Rotates the platform |
+| ULN2003 driver board | 1 | Switches the motor windings |
+| 10 kΩ potentiometer | 1 | Adjusts rotation speed |
+| Momentary push button | 1 | Starts and stops motion |
+| 5 V, 2 A adapter | 1 | External motor supply |
+| USB-C data cable | 1 | Controller connection and programming |
+| Breadboard and jumper wires | As needed | Prototype connections |
+| Base, rotating plate, and mounting materials | As needed | Mechanical assembly |
 
 ## System Architecture
 
 ```mermaid
 flowchart TD
-    A[Potentiometer] --> C[ESP32-S3 controller]
+    P[Potentiometer] --> C[Arduino Nano ESP32]
     B[Push button] --> C
     C --> D[ULN2003 driver]
-    P[5 V motor supply] --> D
-    D --> E[28BYJ-48 stepper motor]
-    E --> F[Jewellery platform]
+    V[5 V motor supply] --> D
+    D --> M[28BYJ-48 motor]
+    M --> T[Jewellery platform]
+    C --> S[Serial diagnostics]
 ```
 
-The controller reads the user inputs and generates the motor stepping sequence. The driver switches the motor windings, and the geared output shaft transfers motion to the platform. A separate phone or camera records the jewellery as it rotates.
+## Wiring
 
-## Hardware
-
-| Component | Quantity | Purpose |
-| --- | --- | --- |
-| ESP32-S3-based development board | 1 | Executes the control firmware |
-| 28BYJ-48, 5 V stepper motor | 1 | Rotates the platform |
-| ULN2003 driver board | 1 | Interfaces the controller with the motor |
-| 5 V, 2 A adapter | 1 | External motor power supply |
-| 10 kΩ potentiometer | 1 | Speed input |
-| Push button | 1 | Local control input |
-| Breadboard and jumper wires | As needed | Prototype connections |
-| USB-C data cable | 1 | Firmware upload and controller connection |
-| Base, rotating plate, and mounting materials | As needed | Mechanical structure |
-
-## Pin Connections
-
-The following mapping uses the board labels from the prototype. Match these labels to the selected board and the pin-numbering mode used by the firmware; labels such as `D2` must not be assumed to mean raw GPIO 2.
-
-| Signal | Controller board label |
+| Component connection | Destination |
 | --- | --- |
 | ULN2003 IN1 | D2 |
 | ULN2003 IN2 | D3 |
 | ULN2003 IN3 | D4 |
 | ULN2003 IN4 | D5 |
 | Potentiometer wiper | A0 |
-| Push-button input | D6 |
+| Potentiometer outer terminals | 3.3 V and GND |
+| Push button | Between D6 and GND |
+| Motor connector | ULN2003 motor socket |
+| Driver power input | External 5 V motor supply |
+| Driver/supply ground | Common ground with the controller |
 
-For the analog input, connect the potentiometer's outer terminals to 3.3 V and GND. Match the button wiring to the sketch's pull-up or pull-down configuration. Power the motor through the driver using the 5 V motor supply and connect the controller and driver grounds together. Verify supply polarity before powering the prototype.
+The code enables `INPUT_PULLUP` on D6, so a button press is detected as LOW. Use the board labels shown above; the source uses `D2`–`D6` and `A0`, rather than hard-coded raw GPIO numbers. Keep the potentiometer input within the controller's 3.3 V range. Power the motor through the driver, not a controller GPIO.
 
-## Firmware and Motion Control
+## Motion Sequence
 
-The firmware is developed in C/C++ using the Arduino environment. Its main responsibilities are:
-
-1. Initialize the motor outputs and user inputs.
-2. Read the potentiometer and button state.
-3. Convert the requested sweep into a target step count.
-4. Apply the motor stepping sequence in the required direction.
-5. Control rotation speed through the interval between steps.
-6. Complete or repeat the movement according to the selected sketch.
-
-### Angular movement
-
-The prototype used a nominal value of **4096 half-steps per output-shaft revolution**:
-
-```text
-target_half_steps = round(sweep_degrees × half_steps_per_revolution / 360)
+```mermaid
+stateDiagram-v2
+    [*] --> Stopped
+    Stopped --> Sweeping: Button press
+    Sweeping --> Pausing: 2048 half-steps completed
+    Pausing --> Sweeping: 500 ms elapsed
+    Sweeping --> Stopped: Button press
+    Pausing --> Stopped: Button press
 ```
 
-| Requested movement | Nominal half-step count |
-| --- | ---: |
-| 180° | 2048 |
-| 280° | 3186 |
-| 360° | 4096 |
+The first sweep is labeled clockwise in the firmware. At the end of each sweep, the program resets the sweep counter, releases the motor coils, flips the direction flag, and begins the pause. Physical clockwise/anticlockwise orientation depends on the viewing side and wiring.
 
-These values are configuration targets, not measured accuracy specifications. Check the actual travel on the assembled platform and adjust the calibration if needed. The step count must also match the stepping mode used in the sketch.
+Stopping preserves the current step index, direction, sweep counter, and pause state. Starting again resumes the stored sequence; it does not reset the platform to a home position. A pause timer continues to age while stopped, so restarting during a pause does not necessarily provide a fresh 500 ms pause.
 
-## Setup and Operation
+## Speed and Timing
 
-1. Assemble the motor, driver, controller, potentiometer, and button using the pin mapping above and the wiring requirements of the selected sketch.
-2. Secure the motor to the base and attach the platform so that it is centered over the shaft. Check that the platform can move without rubbing or tilting.
-3. Open the project's `.ino` sketch in Arduino IDE.
-4. Install the board support package for the exact development board and any libraries referenced by the sketch's `#include` statements.
-5. Select the correct board, USB port, and pin-numbering settings.
-6. Confirm the motor pin mapping, step count, rotation direction, and button configuration in the firmware.
-7. Upload the sketch and test the platform without jewellery before adding a lightweight product.
-8. Position the jewellery near the center, frame it with a phone or camera, and adjust lighting.
-9. Use the potentiometer and the controls implemented in the sketch to operate the platform. Start recording separately on the camera.
+The potentiometer reading is mapped as follows:
 
-Keep the exact board selection and library dependencies alongside the firmware when publishing it, so another user can reproduce the build.
+```cpp
+unsigned long stepDelay = map(potValue, 0, 4095, 4000, 1000);
+```
 
-## Prototype Development and Observations
+| ADC reading | Commanded half-step interval | Idealized 180° sweep duration |
+| --- | ---: | ---: |
+| 0 | 4000 µs | 8.192 s |
+| 4095 | 1000 µs | 2.048 s |
 
-Development included controller upload and connection troubleshooting, stepper-motor operation, direction control, potentiometer input, button control, and exploration of different sweep angles.
+These durations are calculated from 2048 steps at a fixed interval, excluding the 0.5-second pause and software overhead. They are not measured performance results. The mapping assumes ADC readings in the range 0–4095; the sketch does not explicitly set ADC resolution.
 
-Full-revolution motion was observed during initial testing. The mechanical prototype also showed platform tilt or wobble, highlighting the importance of centered loading, rigid motor mounting, and platform support.
+The main loop checks timestamps instead of using a blocking delay for every step. The sketch does contain a one-second initialization delay in `setup()`, and serial output can add execution overhead.
 
-No quantitative angular-accuracy, payload-capacity, or endurance results are claimed here. Demonstration photos and videos should be used to show the actual prototype behavior.
+## Setup
 
-## Repository Organization
+1. Secure the motor and center the platform over its shaft. Check that the platform can turn without rubbing against the base.
+2. Wire the driver and controls according to the table above, with power disconnected during assembly.
+3. In Arduino IDE, install the board support for Arduino Nano ESP32 and select that board and its USB port.
+4. Open `Jewellery_Project_180_degrees.ino`. For a conventional Arduino sketch folder, use `Jewellery_Project_180_degrees/Jewellery_Project_180_degrees.ino`; allow the IDE to create that folder if prompted.
+5. Upload the sketch. No additional third-party library installation is required by this source file.
+6. Open Serial Monitor at **115200 baud**. After initialization, the startup messages should indicate that the motor is stopped.
+7. Test motion with the empty platform, then place a lightweight jewellery item near its center.
+8. Press the button to start, adjust the potentiometer for the desired motion, and begin recording on the camera separately.
+9. Press the button again to stop.
 
-Suggested locations for the project files are listed below. Add the corresponding files as they become available.
+## Firmware Structure
 
-| Location | Contents |
+| Function | Responsibility |
 | --- | --- |
-| `README.md` | Project overview and operating information |
-| `firmware/` | Working Arduino sketch and clearly labeled variants |
-| `docs/` | Wiring diagram, component details, and project report |
-| `images/` | Prototype, wiring, mounting, and product photographs |
-| `demo/` | Short demonstration video, or a document linking to a hosted video |
+| `setup()` | Initializes serial output, motor pins, analog input, and button pull-up; releases the motor |
+| `loop()` | Reads inputs, schedules steps and pauses, reverses direction, and prints diagnostics |
+| `handleButton()` | Debounces the button and toggles the running state |
+| `performStep()` | Writes one of the eight half-step patterns to the driver inputs |
+| `releaseMotor()` | Sets all four motor outputs LOW |
 
-## Limitations
+The serial status line is printed approximately once per second and contains the motor state, direction flag, potentiometer value, and step counter. During a direction pause, the direction flag already represents the upcoming sweep.
 
-- The current mechanism is a prototype, and mounting or platform imbalance can affect image stability.
-- Commanded step counts do not provide independent feedback of the platform's actual angle.
-- Rotation quality depends on the product load, selected speed, and mechanical assembly.
-- Camera capture and lighting are controlled separately.
-- Precise operating behavior and wireless features vary between firmware versions.
+## Configuration
+
+| Setting | Value in this sketch | Purpose |
+| --- | --- | --- |
+| `STEPS_PER_SWEEP` | `2048` | Commanded half-steps per sweep |
+| `DIRECTION_PAUSE` | `500` ms | Delay between sweeps |
+| `DEBOUNCE_DELAY` | `50` ms | Button stability threshold |
+| `Serial.begin()` | `115200` | Serial baud rate |
+| Potentiometer mapping | `4000` to `1000` µs | Commanded half-step interval |
+
+The firmware uses a nominal conversion of 4096 half-steps per revolution. Verify actual platform travel when changing the motor, drive sequence, or mechanical assembly.
+
+## Limitations and Validation
+
+This is an open-loop prototype: the controller counts commanded steps but does not measure platform angle. The serial message `RETURNED TO START POSITION` indicates completion of the reverse step count, not a sensor-confirmed home position.
+
+Motor coils are released during pauses and when stopped, so the firmware does not actively hold position at those times. Manual movement, missed steps, or drivetrain play can affect the return position. The mechanical prototype has also shown tilt or wobble, making rigid mounting and centered loading important.
+
+The source establishes the intended control behavior. Angular accuracy, load capacity, endurance, and speed under load require physical measurements; no numerical validation results are claimed here.
+
+## Supporting Project Files
+
+Useful additions alongside the firmware and README are:
+
+- A wiring diagram in `docs/`.
+- The project report in `docs/`.
+- Photos of the assembled platform, motor mounting, and wiring in `images/`.
+- A demonstration video showing a complete outward and return sweep, speed adjustment, and start/stop control.
+- A sample jewellery video captured with the turntable.
 
 ## Future Improvements
 
-- Add rigid motor mounting and a bearing-supported rotating platform.
-- Introduce acceleration and deceleration to improve motion transitions.
-- Add a home-position sensor for a repeatable starting reference.
-- Integrate high-CRI lighting for consistent product illumination.
-- Implement synchronized camera triggering and step-and-capture operation.
-- Refine wireless controls and document the supported commands.
-- Measure angular repeatability, stable operating speeds, and practical payload limits.
+- A bearing-supported platform and more rigid motor mounting.
+- Acceleration and deceleration for smoother starts and reversals.
+- A home-position sensor for establishing a repeatable physical reference.
+- Automated camera triggering for step-and-capture photography.
+- High-CRI lighting for consistent product illumination.
+- Wireless controls in a separately documented firmware version.
+- Measured angular repeatability and load-dependent motion tests.
 
 ## Skills Demonstrated
 
-Embedded C/C++ programming, digital and analog I/O, stepper-motor sequencing, user-input integration, power and driver interfacing, hardware debugging, and mechanical-electrical prototype integration.
-
-## Author
-
-**Shanmukh Jonnalagadda**  
-Master's student in Electrical and Computer Engineering, George Mason University
+Embedded C/C++, digital and analog I/O, stepper-motor sequencing, timestamp-based scheduling, button debouncing, serial diagnostics, driver integration, and mechanical-electrical prototyping.
